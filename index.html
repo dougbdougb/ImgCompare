@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgCompare</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+
+<body>
+  <div id="app">
+    <header class="app-header">
+      <h1>ImgCompare</h1>
+      <div class="header-controls">
+        <button id="home-btn" class="icon-btn" title="Reset / Home">
+          <span class="icon">⌂</span>
+          <span class="text">Home</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- Upload Overlay -->
+      <div id="upload-overlay" class="upload-overlay">
+        <div class="drop-zone">
+          <div class="icon">📂</div>
+          <h2>Drag & Drop Images</h2>
+          <p>or click to browse</p>
+          <input type="file" id="file-input" multiple accept="image/*" class="hidden-input">
+        </div>
+        <div id="file-list" class="file-list"></div>
+      </div>
+
+      <!-- Comparison Viewer -->
+      <div id="viewer-container" class="viewer-container hidden">
+        <canvas id="compare-canvas"></canvas>
+      </div>
+    </main>
+
+    <!-- Footer Controls -->
+    <footer id="app-footer" class="app-footer hidden">
+      <div class="controls-container">
+        <!-- Main Controls (Moved from floating panel) -->
+        <div class="controls">
+          <div class="control-group mode-group">
+            <label>Mode</label>
+            <select id="mode-select">
+              <option value="wipe">Wipe (1)</option>
+              <option value="ab">Toggle (2)</option>
+              <option value="diff">Difference (3)</option>
+              <option value="mask">Mask (4)</option>
+            </select>
+          </div>
+
+          <div id="wipe-controls" class="control-group specific-control">
+            <label>Wipe Position</label>
+            <div class="slider-row">
+              <input type="range" id="wipe-slider" min="0" max="100" value="50">
+              <div class="toggle-group">
+                <label><input type="radio" name="wipe-dir" value="horizontal" checked> Horz</label>
+                <label><input type="radio" name="wipe-dir" value="vertical"> Vert</label>
+              </div>
+            </div>
+          </div>
+
+          <div id="mask-controls" class="control-group specific-control hidden">
+            <div class="row">
+              <div>
+                <label>Type</label>
+                <select id="mask-type">
+                  <option value="checker">Checkerboard</option>
+                  <option value="stripes">Stripes</option>
+                </select>
+              </div>
+              <div>
+                <label>Size</label>
+                <input type="range" id="mask-size" min="10" max="200" value="50">
+              </div>
+            </div>
+            <div class="row">
+              <div style="flex: 1;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <label>B Value Mult</label>
+                  <button id="mask-value-reset" title="Reset to 1" style="padding: 0 5px;">↺</button>
+                </div>
+                <input type="range" id="mask-value" min="0.75" max="1.25" step="0.01" value="1">
+              </div>
+            </div>
+          </div>
+
+          <div id="ab-controls" class="control-group specific-control hidden">
+            <button id="ab-toggle-btn" class="action-btn">Hold to Show B</button>
+          </div>
+
+          <div id="diff-controls" class="control-group specific-control hidden">
+            <label>Multiplier</label>
+            <input type="range" id="diff-mult" min="1" max="4" step="0.1" value="1">
+          </div>
+        </div>
+
+        <div class="file-info-container">
+          <div class="file-info-item">
+            <span class="file-label">A:</span>
+            <span id="file-name-a" class="file-name">--</span>
+          </div>
+          <div class="file-info-item">
+            <span class="file-label">B:</span>
+            <span id="file-name-b" class="file-name">--</span>
+          </div>
+        </div>
+
+        <div class="footer-actions">
+          <button id="zoom-100-btn">Zoom 100% (0)</button>
+          <button id="reset-view-btn">Reset View (h)</button>
+          <button id="export-btn">Export Image</button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Resolution Modal -->
+    <dialog id="resolution-modal" class="modal">
+      <form method="dialog">
+        <h3>Resolution Mismatch</h3>
+        <p>The images have different resolutions. How would you like to proceed?</p>
+        <div class="modal-actions">
+          <button value="scale-up-small">Scale Up Smaller</button>
+          <button value="scale-down-large">Scale Down Larger</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
