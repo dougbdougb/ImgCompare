@@ -5,6 +5,7 @@ const state = {
     images: [], // { name, url, element, width, height }
     composition: { width: 0, height: 0 }, // Virtual size of aligned images
     mode: 'wipe', // wipe, ab, diff, mask
+    activeImages: [], // { element, x, y, width, height } - For rendering
     wipe: {
         position: 0.5,
         direction: 'horizontal'
@@ -39,6 +40,8 @@ const canvas = document.getElementById('compare-canvas');
 const ctx = canvas.getContext('2d');
 const resolutionModal = document.getElementById('resolution-modal');
 const appFooter = document.getElementById('app-footer');
+const standardActions = document.getElementById('standard-actions');
+const mismatchActions = document.getElementById('mismatch-actions');
 
 // Controls
 const controlsPanel = document.querySelector('.controls');
@@ -50,6 +53,7 @@ const maskSizeSlider = document.getElementById('mask-size');
 const maskValueSlider = document.getElementById('mask-value');
 const maskValueResetBtn = document.getElementById('mask-value-reset');
 const diffMultSlider = document.getElementById('diff-mult');
+const diffResetBtn = document.getElementById('diff-reset');
 const abBtn = document.getElementById('ab-toggle-btn');
 // const showIndicatorsCheckbox removed
 const homeBtn = document.getElementById('home-btn');
@@ -106,6 +110,12 @@ maskValueResetBtn.addEventListener('click', () => {
 
 diffMultSlider.addEventListener('input', (e) => {
     state.diff.mult = parseFloat(e.target.value);
+    render();
+});
+
+diffResetBtn.addEventListener('click', () => {
+    state.diff.mult = 1;
+    diffMultSlider.value = 1;
     render();
 });
 
@@ -282,9 +292,28 @@ async function loadImages(files) {
 
 function checkResolution() {
     const [img1, img2] = state.images;
-    if (img1.width !== img2.width || img1.height !== img2.height) {
+
+    // Check if aspect ratios are significantly different
+    const ar1 = img1.width / img1.height;
+    const ar2 = img2.width / img2.height;
+    const arDiff = Math.abs(ar1 - ar2);
+
+    // Tolerance for float comparison
+    const mismatch = arDiff > 0.01;
+
+    if (mismatch) {
+        // Show mismatch options (3 buttons)
+        standardActions.classList.add('hidden');
+        mismatchActions.classList.remove('hidden');
+        resolutionModal.showModal();
+    } else if (img1.width !== img2.width || img1.height !== img2.height) {
+        // Show standard options (2 buttons)
+        mismatchActions.classList.add('hidden');
+        standardActions.classList.remove('hidden');
         resolutionModal.showModal();
     } else {
+        // Perfect match
+        state.scalePreference = 'no-scale'; // Default for match
         processImages();
     }
 }
@@ -315,27 +344,98 @@ function calculateComposition() {
     if (state.images.length < 2) return;
     const [img1, img2] = state.images;
 
-    // Determine target dimensions for alignment
     let targetWidth = img1.width;
     let targetHeight = img1.height;
 
+    // Default scales
+    state.scales = { img1: 1, img2: 1 };
+
+    // Active Images configuration (for rendering)
+    // We will calculate exact bounds for each image
+    state.activeImages = [
+        { element: img1.element, x: 0, y: 0, width: img1.width, height: img1.height },
+        { element: img2.element, x: 0, y: 0, width: img2.width, height: img2.height }
+    ];
+
     if (state.scalePreference === 'scale-up-small') {
+        // Standard behavior: match the larger dimension or specific logic
+        // Original logic seemed to just pick one. Let's stick to the intention:
+        // "Scale Up Smaller" usually means make them valid for comparison by scaling the smaller one to match.
+        // If AR matches, this is simple.
+
         if (img1.width < img2.width) {
             targetWidth = img2.width;
             targetHeight = img2.height;
+        } else {
+            targetWidth = img1.width;
+            targetHeight = img1.height;
         }
+
+        // Match both to target
+        state.scales.img1 = targetWidth / img1.width;
+        state.scales.img2 = targetWidth / img2.width;
+
     } else if (state.scalePreference === 'scale-down-large') {
         if (img1.width > img2.width) {
             targetWidth = img2.width;
             targetHeight = img2.height;
+        } else {
+            targetWidth = img1.width;
+            targetHeight = img1.height;
         }
+
+        // Match both to target
+        state.scales.img1 = targetWidth / img1.width;
+        state.scales.img2 = targetWidth / img2.width;
+
+    } else if (state.scalePreference === 'no-scale') {
+        // 1. No Scale, Center Align
+        // Composition size is max bounds
+        targetWidth = Math.max(img1.width, img2.width);
+        targetHeight = Math.max(img1.height, img2.height);
+
+        state.scales.img1 = 1;
+        state.scales.img2 = 1;
+
+    } else if (state.scalePreference === 'match-width') {
+        // 2. Scale up smaller to match width of larger
+        // Target width is max width
+        targetWidth = Math.max(img1.width, img2.width);
+
+        // Calculate scales to match this width
+        const s1 = targetWidth / img1.width;
+        const s2 = targetWidth / img2.width;
+
+        state.scales.img1 = s1;
+        state.scales.img2 = s2;
+
+        // Target height is max of active heights
+        targetHeight = Math.max(img1.height * s1, img2.height * s2);
+
+    } else if (state.scalePreference === 'match-height') {
+        // 3. Scale up smaller to match height of larger
+        targetHeight = Math.max(img1.height, img2.height);
+
+        const s1 = targetHeight / img1.height;
+        const s2 = targetHeight / img2.height;
+
+        state.scales.img1 = s1;
+        state.scales.img2 = s2;
+
+        targetWidth = Math.max(img1.width * s1, img2.width * s2);
     }
 
-    // Store relative scales to match target dimensions
-    state.scales = {
-        img1: targetWidth / img1.width,
-        img2: targetWidth / img2.width
-    };
+    // Update active images with final positions (Centered)
+    state.activeImages[0].width = img1.width * state.scales.img1;
+    state.activeImages[0].height = img1.height * state.scales.img1;
+    state.activeImages[0].x = (targetWidth - state.activeImages[0].width) / 2;
+    state.activeImages[0].y = (targetHeight - state.activeImages[0].height) / 2;
+
+    state.activeImages[1].width = img2.width * state.scales.img2;
+    state.activeImages[1].height = img2.height * state.scales.img2;
+    state.activeImages[1].x = (targetWidth - state.activeImages[1].width) / 2;
+    state.activeImages[1].y = (targetHeight - state.activeImages[1].height) / 2;
+
 
     // Composition size is the target size
     state.composition = {
@@ -411,105 +511,155 @@ function drawScene(context, w, h, applyTransform, patternSizeOverride = null) {
         context.clearRect(0, 0, w, h);
 
         // Helper to draw an image scaled to composition size
-        const drawScaled = (img, scale) => {
-            context.drawImage(img, 0, 0, img.width * scale, img.height * scale);
+        // Updated to support offsets
+        const drawActiveImage = (index) => {
+            const imgObj = state.activeImages[index];
+            if (!imgObj) return;
+            // Apply offset
+            context.drawImage(imgObj.element, imgObj.x, imgObj.y, imgObj.width, imgObj.height);
         };
 
-        // --- LAYER 1: Base Image ---
-        context.save(); // SAVE 1: Transform
-
-        if (applyTransform) {
-            context.translate(state.transform.offsetX, state.transform.offsetY);
-            context.scale(state.transform.scale, state.transform.scale);
-        }
-
-        // Draw Image 1 (Base)
-        drawScaled(img1.element, state.scales.img1);
-
-        // --- LAYER 2: Comparison Image ---
-        context.save(); // SAVE 2: Mode specific state
-
         if (state.mode === 'wipe') {
-            // We need to clip based on screen coordinates (or target coordinates), 
-            // but draw in transformed coordinates.
+            // WIPE MODE: Split View (No Stacking)
 
-            context.save(); // SAVE 3: Clip Setup
-            context.setTransform(1, 0, 0, 1, 0, 0); // Identity
+            // 1. Draw Image A (Clipped to "A-Side" of wiper)
+            context.save();
             context.beginPath();
 
             const wipeX = w * state.wipe.position;
             const wipeY = h * state.wipe.position;
 
             if (state.wipe.direction === 'horizontal') {
-                context.rect(wipeX, 0, w, h);
+                // A is Left
+                context.rect(0, 0, wipeX, h);
             } else {
-                context.rect(0, wipeY, w, h);
+                // A is Top
+                context.rect(0, 0, w, wipeY);
             }
             context.clip();
 
-            // We cannot use restore() here because it would remove the clip.
-            // We must manually re-apply the transform to draw the image in the correct place.
+            if (applyTransform) {
+                context.translate(state.transform.offsetX, state.transform.offsetY);
+                context.scale(state.transform.scale, state.transform.scale);
+            }
+            // Clip A to its own bounds (optional but good for consistency)
+            drawActiveImage(0);
+            context.restore();
+
+            // 2. Draw Image B (Clipped to "B-Side" of wiper)
+            context.save();
+            context.beginPath();
+
+            if (state.wipe.direction === 'horizontal') {
+                // B is Right
+                context.rect(wipeX, 0, w - wipeX, h);
+            } else {
+                // B is Bottom
+                context.rect(0, wipeY, w, h - wipeY);
+            }
+            context.clip();
+
+            if (applyTransform) {
+                context.translate(state.transform.offsetX, state.transform.offsetY);
+                context.scale(state.transform.scale, state.transform.scale);
+            }
+            // Clip B to its own bounds (implied by drawImage, but purely drawing B here)
+            drawActiveImage(1);
+            context.restore();
+
+            // 3. Draw Wipe Line Overlay
+            context.save();
+            context.setTransform(1, 0, 0, 1, 0, 0); // Identity
+            context.beginPath();
+            context.strokeStyle = 'rgba(50, 50, 50, 1)'; // Dark Grey (80% grey)
+            context.lineWidth = 1;
+
+            if (state.wipe.direction === 'horizontal') {
+                context.moveTo(wipeX, 0);
+                context.lineTo(wipeX, h);
+            } else {
+                context.moveTo(0, wipeY);
+                context.lineTo(w, wipeY);
+            }
+            context.stroke();
+            context.restore();
+
+        } else if (state.mode === 'ab') {
+            // TOGGLE MODE: Swap (No Stacking)
+
+            context.save();
             if (applyTransform) {
                 context.translate(state.transform.offsetX, state.transform.offsetY);
                 context.scale(state.transform.scale, state.transform.scale);
             }
 
-            drawScaled(img2.element, state.scales.img2);
-
-            context.restore(); // RESTORE 3: Remove clip and transform override
-
-        } else if (state.mode === 'ab') {
             if (isHoldingB) {
-                drawScaled(img2.element, state.scales.img2);
+                drawActiveImage(1);
+            } else {
+                drawActiveImage(0);
             }
-        } else if (state.mode === 'diff') {
-            context.globalCompositeOperation = 'difference';
-            drawScaled(img2.element, state.scales.img2);
+            context.restore();
 
-            // Note: Diff enhancement is handled AFTER restoring context
+        } else {
+            // DIFF & MASK MODES: Stacking (A as Background, B as Overlay)
 
-        } else if (state.mode === 'mask') {
-            // 1. Create temp canvas matching target size.
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = w;
-            tempCanvas.height = h;
-            const tCtx = tempCanvas.getContext('2d');
-
-            // 2. Apply current transform to temp context
+            // Layer 1: Base Image A
+            context.save();
             if (applyTransform) {
-                tCtx.translate(state.transform.offsetX, state.transform.offsetY);
-                tCtx.scale(state.transform.scale, state.transform.scale);
+                context.translate(state.transform.offsetX, state.transform.offsetY);
+                context.scale(state.transform.scale, state.transform.scale);
+            }
+            drawActiveImage(0);
+
+            // Layer 2: Comparison Image B
+            if (state.mode === 'diff') {
+                context.globalCompositeOperation = 'difference';
+                drawActiveImage(1);
+
+            } else if (state.mode === 'mask') {
+                // 1. Create temp canvas matching target size.
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = w;
+                tempCanvas.height = h;
+                const tCtx = tempCanvas.getContext('2d');
+
+                // 2. Apply current transform to temp context
+                if (applyTransform) {
+                    tCtx.translate(state.transform.offsetX, state.transform.offsetY);
+                    tCtx.scale(state.transform.scale, state.transform.scale);
+                }
+
+                // 3. Draw Img2 to temp
+                if (state.mask.valueMult !== 1) {
+                    tCtx.filter = `brightness(${state.mask.valueMult})`;
+                }
+                const info = state.activeImages[1];
+                tCtx.drawImage(img2.element, info.x, info.y, info.width, info.height);
+                tCtx.filter = 'none';
+
+                // 4. Mask with pattern (Screen/Target Space)
+                tCtx.save();
+                tCtx.setTransform(1, 0, 0, 1, 0, 0);
+                tCtx.globalCompositeOperation = 'destination-in';
+
+                // Use override size if provided, otherwise use state size
+                const pSize = patternSizeOverride !== null ? patternSizeOverride : state.mask.size;
+                drawPattern(tCtx, w, h, pSize);
+
+                tCtx.restore();
+
+                // 5. Draw temp to main
+                // We are already in context.save() for Layer 1
+                // We need to reset transform to Identity to draw the tempCanvas (which is screen size)
+                context.restore(); // Pop the Transform setup for Layer 1 to draw tempCanvas at 0,0
+
+                context.drawImage(tempCanvas, 0, 0);
             }
 
-            // 3. Draw Img2 to temp
-            if (state.mask.valueMult !== 1) {
-                tCtx.filter = `brightness(${state.mask.valueMult})`;
+            if (state.mode !== 'mask') {
+                context.restore(); // End Layer 1/2 block for Diff
             }
-            tCtx.drawImage(img2.element, 0, 0, img2.width * state.scales.img2, img2.height * state.scales.img2);
-            tCtx.filter = 'none';
-
-            // 4. Mask with pattern (Screen/Target Space)
-            tCtx.save();
-            tCtx.setTransform(1, 0, 0, 1, 0, 0);
-            tCtx.globalCompositeOperation = 'destination-in';
-
-            // Use override size if provided, otherwise use state size
-            const pSize = patternSizeOverride !== null ? patternSizeOverride : state.mask.size;
-            drawPattern(tCtx, w, h, pSize);
-
-            tCtx.restore();
-
-            // 5. Draw temp to main
-            context.restore(); // Pop SAVE 2 (Mode)
-            context.restore(); // Pop SAVE 1 (Transform) - Now we are at Identity
-
-            context.drawImage(tempCanvas, 0, 0);
-
-            return;
         }
-
-        context.restore(); // RESTORE 2: Mode
-        context.restore(); // RESTORE 1: Transform
 
         // --- POST-PROCESSING (Screen/Target Space) ---
 

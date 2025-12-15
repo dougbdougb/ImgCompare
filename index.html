@@ -95,8 +95,11 @@
           </div>
 
           <div id="diff-controls" class="control-group specific-control hidden">
-            <label>Multiplier</label>
-            <input type="range" id="diff-mult" min="1" max="4" step="0.1" value="1">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <label>Multiplier</label>
+              <button id="diff-reset" title="Reset to 1" style="padding: 0 5px;">↺</button>
+            </div>
+            <input type="range" id="diff-mult" min="0.25" max="4" step="0.1" value="1">
           </div>
         </div>
 
@@ -124,9 +127,14 @@
       <form method="dialog">
         <h3>Resolution Mismatch</h3>
         <p>The images have different resolutions. How would you like to proceed?</p>
-        <div class="modal-actions">
+        <div id="standard-actions" class="modal-actions">
           <button value="scale-up-small">Scale Up Smaller</button>
           <button value="scale-down-large">Scale Down Larger</button>
+        </div>
+        <div id="mismatch-actions" class="modal-actions hidden">
+          <button value="no-scale">No Scale (Center)</button>
+          <button value="match-width">Match Width</button>
+          <button value="match-height">Match Height</button>
         </div>
       </form>
     </dialog>
